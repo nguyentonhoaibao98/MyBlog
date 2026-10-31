@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+const base='http://127.0.0.1:5173';
+const origin={Origin:base};
+let cookie='';
+async function req(path,options={},auth=false){return fetch(base+'/api/'+path,{...options,headers:{...origin,...(auth?{Cookie:cookie}:{}),...options.headers}})}
+let r=await req('topics');assert.equal(r.status,200);
+r=await req('topics',{method:'POST'});assert.equal(r.status,401);
+r=await req('login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'incorrect'})});assert.equal(r.status,401);
+r=await req('login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'local-test-only'})});assert.equal(r.status,200);cookie=r.headers.get('set-cookie').split(';')[0];
+r=await req('session',{},true);assert.equal((await r.json()).admin,true);
+const form=new FormData();form.set('title','Access verification');form.set('summary','Temporary local test');form.set('category','Business Central');form.set('public','false');form.set('pdf',new Blob(['%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF'],{type:'application/pdf'}),'test.pdf');
+r=await req('topics',{method:'POST',body:form},true);assert.equal(r.status,201);const t=await r.json();
+r=await req('topics');assert(!(await r.json()).some(x=>x.id===t.id));
+r=await req('file/'+t.id);assert.equal(r.status,404);
+r=await req('file/'+t.id,{},true);assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'application/pdf');
+r=await req('topics/'+t.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({public:true})},true);assert.equal(r.status,200);
+r=await req('topics');assert((await r.json()).some(x=>x.id===t.id));
+r=await req('file/'+t.id);assert.equal(r.status,200);
+r=await req('topics/'+t.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({public:false})},true);assert.equal(r.status,200);
+r=await req('file/'+t.id);assert.equal(r.status,404);
+r=await req('topics/'+t.id,{method:'DELETE'},true);assert.equal(r.status,200);
+r=await req('file/'+t.id,{},true);assert.equal(r.status,404);
+r=await req('logout',{method:'POST'},true);assert.equal(r.status,200);
+console.log('PASS: login, unauthorized writes, PDF upload, private/public lists, direct file authorization, visibility changes, deletion and logout.');
