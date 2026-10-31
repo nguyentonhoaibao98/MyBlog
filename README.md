@@ -1,41 +1,97 @@
-# BC Notes
+# BC Notes — Streamlit
 
-An English-language knowledge library for Dynamics 365 Business Central.
+An English-language Business Central knowledge library, ready for **Streamlit Community Cloud**.
 
 ## Features
 
-- Admin access code with an HTTP-only session cookie and login rate limiting.
-- Public library limited to articles explicitly published by the Admin.
-- PDF uploads up to 20 MB that create articles with a title, description, category, and optional notes.
-- Edit, delete, search, and change article visibility.
-- Server-side authorization for private articles and their PDF files.
-- Persistent Cloudflare D1 records and R2 document storage.
+- Admin access code, expiring server-side sessions, and a shared login attempt limit.
+- Public visitors only see articles explicitly marked public.
+- Create an article by uploading a PDF (up to 20 MB).
+- Edit titles, descriptions, categories, notes, and public/private visibility.
+- Read PDFs inside the article.
+- Persistent JSON and PDF files in a **private GitHub repository**. **No SQL database is required.**
 
-PDFs are embedded for reading; their contents are not automatically converted into article text.
+The public source repository and private content repository are separate. The app refuses a public repository as its data store. Previously shared/downloaded content cannot be recalled. Removed content remains in the private repository's Git history.
+
+## Deploy on Streamlit Community Cloud
+
+1. Create a private GitHub repository, for example `MyBlog-data`, and initialize it with a README. Keep it private.
+2. Create a fine-grained GitHub personal access token:
+   - Repository access: only `MyBlog-data`.
+   - Repository permissions: **Contents → Read and write**.
+   - Keep the token in Streamlit Secrets, never in this public repository.
+3. In [Streamlit Community Cloud](https://share.streamlit.io/), choose **Create app**:
+   - Repository: `nguyentonhoaibao98/MyBlog`
+   - Branch: `main`
+   - Main file path: `streamlit_app.py`
+   - Python version: **3.12**
+4. Open **Advanced settings → Secrets** and supply:
+
+```toml
+ADMIN_CODE = "your-admin-access-code"
+STORAGE_MODE = "github"
+DATA_REPOSITORY = "nguyentonhoaibao98/MyBlog-data"
+DATA_BRANCH = "main"
+DATA_GITHUB_TOKEN = "your-fine-grained-token"
+```
+
+5. Deploy the app. In its sharing settings, allow public visitors.
+6. Sign in with your Admin code, upload a PDF, and enable **Visible to public visitors** when you want to publish the article.
+
+Guests can use **Explore the public library** without the Admin code. New articles are private by default.
+
+If storage is not configured, the app opens safely and Admin sees setup instructions. It does not silently fall back to temporary storage on the cloud.
+
+No Node.js build, Cloudflare D1, R2, SQL server, or database migration is required for the Streamlit version.
 
 ## Local development
 
-Requires Node.js 22.13 or newer.
-
-1. Run `npm run install:ci`.
-2. Create an ignored `.dev.vars` file containing `ADMIN_CODE=<your-local-access-code>`.
-3. Run `npm run build` to generate the local Wrangler configuration.
-4. Apply the database schema:
+Requires Python 3.12.
 
 ```sh
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_clean_franklin_storm.sql
+python -m venv .venv
+# Windows:
+.venv\\Scripts\\activate
+# macOS / Linux:
+# source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run streamlit_app.py
 ```
 
-5. Run `npm run dev` and open the printed local URL.
+Create `.streamlit/secrets.toml` locally using `.streamlit/secrets.example.toml`. For file-only local preview:
 
-## Deployment
+```toml
+ADMIN_CODE = "a-local-test-code"
+STORAGE_MODE = "local"
+LOCAL_DATA_DIR = ".local-data"
+```
 
-The application uses the Sites Vinext runtime. `.openai/hosting.json` declares D1 binding `DB` and R2 binding `BUCKET`. Set `ADMIN_CODE` as a server-side runtime secret and deploy again after changing it. The production access code is never stored in this repository.
+Local mode stores JSON/PDF blobs in `.local-data/`. That directory and real secrets are ignored by Git. Do not use local mode for real content on Community Cloud: its filesystem is temporary.
 
-Database records, uploaded PDFs, and production secrets are separate from the source repository. They are not backed up by a source push.
+## Storage and privacy
 
-## Verification
+- Metadata is stored in `index.json`, PDF files in `pdf/`.
+- PDF and metadata changes are committed together. Non-force updates and conflict retries preserve concurrent edits to other articles.
+- The private data repository must be initialized and its branch must exist.
+- The GitHub token is used server-side; it is never included in browser links.
+- PDFs are only fetched after checking current article visibility.
+- GitHub API and repository limits apply; this storage design suits a modest personal knowledge library.
+- PDF content is embedded for reading; it is not automatically rewritten into a blog post.
+- Old Cloudflare-hosted content is not automatically migrated. Re-upload any existing documents into this Streamlit app.
 
-- `npx tsc --noEmit`
-- `npm run build`
-- `node scripts/check-access.mjs` against a disposable local database and a local `ADMIN_CODE=local-test-only`. The test creates and removes its own temporary article and file.
+## Tests
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+Tests cover authentication, expiry, code rotation, cross-session rate limiting, private/public access, file validation, persistence, rejecting public data repositories, concurrent saves, and Streamlit UI navigation/editing.
+
+Live GitHub storage requires your own private repository and token; automated tests mock its API contract.
+
+## Earlier web version
+
+The existing `app/`, `db/`, `worker/`, and Node.js files belong to the earlier Vinext/Cloudflare version. They are retained for reference and are not imported by `streamlit_app.py`. The previously deployed Sites app remains separate; this change prepares the GitHub app for Streamlit.
+
+See [DEPLOY_STREAMLIT.md](DEPLOY_STREAMLIT.md) for Vietnamese setup instructions.
+

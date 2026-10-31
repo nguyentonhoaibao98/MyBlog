@@ -43,3 +43,11 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Python / Streamlit secrets and local content
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.streamlit/secrets.toml
+.local-data/
